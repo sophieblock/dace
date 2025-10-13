@@ -662,11 +662,106 @@ class TFSession:
             # TODO(later): Optimize
             real_inputs = inputList[num_outputs:]
 
-            newGraph = tf.Graph()
-            with newGraph.as_default():
-                newInputs = [tf.constant(_np_inp) for _np_inp in real_inputs]
-                newOp = tf.Operation(tf_op.node_def, newGraph, inputs=newInputs)
-            outputs_tf = tf.Session(graph=newGraph).run(newOp.outputs)
+            # Execute the op via tf.raw_ops using attributes from the original op
+            # to avoid fragile tf.Operation construction under TF2.
+            try:
+                raw_op = getattr(tf.raw_ops, tf_op.type)
+            except AttributeError:
+                raw_op = None
+
+            # Build a fresh graph (TF1 style) and evaluate there for isolation
+            try:
+                g = tf.compat.v1.Graph()  # type: ignore[attr-defined]
+            except Exception:
+                g = tf.Graph()
+
+            with g.as_default():
+                # Materialize constant tensors for the inputs in this graph
+                const_inputs = [tf.constant(np.asarray(_np_inp)) for _np_inp in real_inputs]
+
+                if raw_op is None:
+                    # Fallback: try to reconstruct with low-level Operation API
+                    newOp = tf.Operation(tf_op.node_def, g, inputs=const_inputs)  # type: ignore
+                    out_tensors = list(newOp.outputs)
+                else:
+                    # Map inputs by name using op_def to the raw op kwargs
+                    kwargs = {}
+                    try:
+                        for idx, in_arg in enumerate(tf_op.op_def.input_arg):  # type: ignore[attr-defined]
+                            argname = in_arg.name
+                            kwargs[argname] = const_inputs[idx]
+                    except Exception:
+                        # If op_def is missing, rely on positional arguments order
+                        pass
+
+                    # Extract attributes
+                    try:
+                        for a in tf_op.op_def.attr:  # type: ignore[attr-defined]
+                            aname = a.name
+                            aval = tf_op.get_attr(aname)
+                            # Decode bytes attributes expected as strings
+                            if isinstance(aval, bytes):
+                                aval = aval.decode()
+                            # Lists of bytes -> lists of str
+                            if isinstance(aval, (list, tuple)) and aval and isinstance(aval[0], bytes):
+                                aval = [v.decode() for v in aval]
+                            # Only set if not already provided by input mapping
+                            if aname not in kwargs:
+                                kwargs[aname] = aval
+                    except Exception:
+                        # Best-effort; some ops have default attrs
+                        pass
+
+                    # Filter kwargs to only those accepted by raw_op
+                    try:
+                        import inspect
+                        valid_params = set(inspect.signature(raw_op).parameters.keys())
+                        # Remap common TF1 names to TF2 raw op names
+                        if "reduction_indices" in kwargs and "axis" in valid_params and "axis" not in kwargs:
+                            kwargs["axis"] = kwargs.pop("reduction_indices")
+                        if "keep_dims" in kwargs:
+                            if "keepdims" in valid_params and "keepdims" not in kwargs:
+                                kwargs["keepdims"] = kwargs.pop("keep_dims")
+                        # Some wrappers accept positional-only; keep only valid names
+                        kwargs = {k: v for k, v in kwargs.items() if k in valid_params}
+                    except Exception:
+                        # If we can't inspect, at least drop common TF1-only attrs
+                        for drop in ("T", "U", "_class"):
+                            kwargs.pop(drop, None)
+
+                    # Call the raw op; handle multiple outputs uniformly
+                    try:
+                        res = raw_op(**kwargs)
+                    except TypeError:
+                        # Last resort: try tf.nn.* equivalents for a few known ops
+                        nn_fallback = None
+                        try:
+                            if tf_op.type == "Conv3D":
+                                nn_fallback = tf.nn.conv3d
+                            elif tf_op.type == "Conv2D":
+                                nn_fallback = tf.nn.conv2d
+                        except Exception:
+                            nn_fallback = None
+                        if nn_fallback is None:
+                            raise
+                        # Map common argument names for nn.* API
+                        nn_kwargs = {}
+                        for key in ("strides", "padding", "data_format", "dilations"):
+                            if key in kwargs:
+                                nn_kwargs[key] = kwargs[key]
+                        res = nn_fallback(*const_inputs, **nn_kwargs)
+                    if isinstance(res, (list, tuple)):
+                        out_tensors = list(res)
+                    else:
+                        out_tensors = [res]
+
+                # Evaluate
+                try:
+                    sess = tf.compat.v1.Session(graph=g)  # type: ignore[attr-defined]
+                except Exception:
+                    sess = tf.Session(graph=g)
+                outputs_tf = sess.run(out_tensors)
+
             if num_outputs == 0:
                 return outputs_tf[0]
             for index in range(num_outputs):
@@ -1910,9 +2005,11 @@ class TFSession:
             # add memelets from tasklet to cr
             for i, out in enumerate(outputList):
                 name = "out"
-                memlet = Memlet.simple(reduce_node, "0", wcr_str="lambda a,b: a+b")
-                state.add_edge(tasklet, name, mapExit2, None, memlet)
-                state.add_edge(mapExit2, None, reduce_node, None, memlet)
+                # Create distinct memlets per edge to avoid duplicate memlet reuse
+                memlet_to_exit = Memlet.simple(reduce_node, "0", wcr_str="lambda a,b: a+b")
+                memlet_to_reduce = Memlet.simple(reduce_node, "0", wcr_str="lambda a,b: a+b")
+                state.add_edge(tasklet, name, mapExit2, None, memlet_to_exit)
+                state.add_edge(mapExit2, None, reduce_node, None, memlet_to_reduce)
 
     def visit_BiasAdd(self, node):
 
@@ -2131,7 +2228,8 @@ class TFSession:
             memlet = Memlet.simple(inp, ",".join(inputParams[i]))
             state.add_edge(mapEntry2, None, tasklet, name, memlet)
         # add memelets from tasklet to cr
-        state.add_edge(tasklet, "out", mapExit2, None, memletTempNode)
+        memletTempNode2 = Memlet.simple(str(temp_node), "0", wcr_str="lambda a, b: a+b")
+        state.add_edge(tasklet, "out", mapExit2, None, memletTempNode2)
 
     def visit_AvgPoolGrad(self, node):
         assert str(node.get_attr("padding"))[2:-1] == "VALID"
@@ -2672,14 +2770,18 @@ class TFSession:
             memlet = Memlet.simple(inp, ",".join(inputParams[i]))
             state.add_edge(mapEntry2, None, tasklet, name, memlet)
 
-        memlet = Memlet.simple(
+        memlet_to_exit = Memlet.simple(
             reduce_node,
-            #paddedOutput if padding > 0 else outputList[0],
             "0",
             wcr_str="lambda a,b: a+b",
         )
-        state.add_edge(tasklet, "out", mapExit2, None, memlet)
-        state.add_edge(mapExit2, None, reduce_node, None, memlet)
+        memlet_to_reduce = Memlet.simple(
+            reduce_node,
+            "0",
+            wcr_str="lambda a,b: a+b",
+        )
+        state.add_edge(tasklet, "out", mapExit2, None, memlet_to_exit)
+        state.add_edge(mapExit2, None, reduce_node, None, memlet_to_reduce)
 
     def visit_Conv2DBackpropFilter(self, node):
         # convolve loss over input.
@@ -2805,14 +2907,18 @@ class TFSession:
             state.add_edge(mapEntry2, None, tasklet, name, memlet)
 
         #for i, out in enumerate(outputList):
-        memlet = Memlet.simple(
+        memlet_to_exit = Memlet.simple(
             reduce_node,
-            #out,
             "0",
             wcr_str="lambda a,b: a+b",
         )
-        state.add_edge(tasklet, "out", mapExit2, None, memlet)
-        state.add_edge(mapExit2, None, reduce_node, None, memlet)
+        memlet_to_reduce = Memlet.simple(
+            reduce_node,
+            "0",
+            wcr_str="lambda a,b: a+b",
+        )
+        state.add_edge(tasklet, "out", mapExit2, None, memlet_to_exit)
+        state.add_edge(mapExit2, None, reduce_node, None, memlet_to_reduce)
 
     def visit_SparseSoftmaxCrossEntropyWithLogits(self, node):
 
