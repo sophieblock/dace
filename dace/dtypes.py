@@ -378,12 +378,31 @@ _BYTES = {
 
 
 class typeclass(object):
-    """ An extension of types that enables their use in DaCe.
+    """
+    Wrapper around a concrete (typically NumPy) scalar type.
 
-        These types are defined for three reasons:
-            1. Controlling DaCe types
-            2. Enabling declaration syntax: `dace.float32[M,N]`
-            3. Enabling extensions such as `dace.struct` and `dace.vector`
+    The ``typeclass`` provides a small uniform API that DaCe uses to represent
+    scalar data types across the compiler. It holds information used by
+    code generation, type promotion and serialization (for example C type
+    strings, byte sizes, and numpy dtype interoperability).
+
+    Main responsibilities and properties:
+    - ``.type``: the underlying Python / NumPy scalar type (e.g. numpy.float32).
+    - ``.ctype``: the corresponding C/C++ type string used by codegen.
+    - ``.bytes``: size in bytes.
+    - ``.as_ctypes()`` / ``.as_numpy_dtype()``: helpers for FFI or numpy interop.
+
+    Why this abstraction exists:
+    1. Control DaCe types independently from raw Python/NumPy types.
+    2. Allow declaration syntax such as ``dace.float32[M, N]`` (via ``__getitem__``).
+    3. Support extensions such as ``dace.struct``, ``dace.pointer`` and ``dace.vector``
+       that compose or wrap base scalar types.
+
+    Used by:
+    - many frontend modules (e.g. ``dace/frontend/python/newast.py``) for type
+      inference and annotation of program arguments,
+    - code generation and unparsing (e.g. ``dace/codegen/*``) to emit C/C++ types,
+    - serialization (``dace/serialize.py``) when converting types to/from JSON.
     """
 
     def __init__(self, wrapped_type, typename=None):
@@ -506,11 +525,35 @@ class typeclass(object):
         return _OCL_TYPES[self.type]
 
     def as_arg(self, name):
+        """
+        Return the C-style function argument declaration for this type.
+
+        Example: ``dace.float32.as_arg('x')`` -> ``"float x"`` (or the
+        equivalent C++/dace:: type string for this type).
+
+        This is a convenience used by code generation helpers when emitting
+        function signatures for native code.
+
+        :param name: argument name to use in the declaration.
+        :returns: a string suitable for insertion into a C/C++ function
+                  prototype.
+        """
         return self.ctype + ' ' + name
 
 
 def max_value(dtype: typeclass):
-    """Get a max value literal for `dtype`."""
+    """
+    Return the maximum representable value for the provided scalar ``dtype``.
+
+    This uses NumPy's iinfo/finfo machinery for integer and floating
+    point types. For booleans, ``True`` is returned. The input is expected
+    to be a DaCe ``typeclass`` instance (or similar object exposing
+    ``as_numpy_dtype()``).
+
+    :param dtype: a DaCe ``typeclass`` describing a scalar type.
+    :returns: a Python object representing the maximum value for the type.
+    :raises TypeError: if the provided type is not a supported numeric type.
+    """
     nptype = dtype.as_numpy_dtype()
     if nptype == numpy.bool_:
         return True
@@ -523,7 +566,12 @@ def max_value(dtype: typeclass):
 
 
 def min_value(dtype: typeclass):
-    """Get a min value literal for `dtype`."""
+    """
+    Return the minimum representable value for the provided scalar ``dtype``.
+
+    Mirrors :func:`max_value` but returns the smallest representable
+    value for integers and floats. For booleans, ``False`` is returned.
+    """
     nptype = dtype.as_numpy_dtype()
     if nptype == numpy.bool_:
         return False
@@ -537,12 +585,22 @@ def min_value(dtype: typeclass):
 
 def reduction_identity(dtype: typeclass, red: ReductionType) -> Any:
     """
-    Returns known identity values (which we can safely reset transients to)
-    for built-in reduction types.
+    Return a safe identity value for a given reduction and input type.
 
-    :param dtype: Input type.
-    :param red: Reduction type.
-    :return: Identity value in input type, or None if not found.
+    Many reduction transformations initialize temporary accumulation buffers
+    to the identity element of the reduction (for example, 0 for sum,
+    1 for product, and +inf/-inf for min/max depending on the sign). This
+    helper maps a :class:`ReductionType` and a DaCe ``typeclass`` to a
+    concrete Python value (or ``None`` when a suitable identity cannot be
+    derived).
+
+    :param dtype: input DaCe ``typeclass`` used to choose a correctly-typed
+                  identity value.
+    :param red: a :class:`ReductionType` enum value.
+    :returns: identity value (typed) or ``None`` if no identity is defined.
+
+    Used by optimization/transformation passes that need to initialize or
+    reset accumulators (for example ``dace/transformation/auto/auto_optimize.py``).
     """
     _VALUE_GENERATORS = {
         ReductionType.Custom: lambda x: None,
@@ -562,8 +620,30 @@ def reduction_identity(dtype: typeclass, red: ReductionType) -> Any:
 
 def result_type_of(lhs, *rhs):
     """
-    Returns the largest between two or more types (dace.types.typeclass)
-    according to C semantics.
+    Compute the result (promotion) type for an operation on two or more types.
+
+    This implements DaCe's type promotion rules which are modeled after C
+    semantics and NumPy's promotion behavior with the following notable
+    points:
+
+    - If either side is ``None`` (``typeclass(None)``), the other side is used.
+    - Vector types (``dace.vector``) take precedence: when mixing vectors and
+        scalars the vector type is returned. When two vectors of the same
+        element type but different lane counts are mixed, the larger lane
+        count wins; if lane counts match, elementwise promotion is applied.
+    - Integer vs integer: larger byte-width wins. When widths equal, unsigned
+        types have priority over signed ones.
+    - Integer with floating point: floating point wins.
+    - Floating point vs floating point: larger byte-width wins.
+
+    :param lhs: left-hand operand type (can be a ``typeclass``, a DaCe
+                            Data/Scalar, or a symbolic placeholder).
+    :param rhs: one or more right-hand operand types.
+    :returns: the promoted DaCe ``typeclass`` that can safely hold the
+                        result of an operation combining the inputs.
+
+    Used extensively by frontend/type inference and codegen (for example
+    ``dace/frontend/python/newast.py`` and ``dace/codegen/tools/type_inference.py``).
     """
     if len(rhs) == 0:
         rhs = None
@@ -630,7 +710,18 @@ def result_type_of(lhs, *rhs):
 
 
 class opaque(typeclass):
-    """ A data type for an opaque object, useful for C bindings/libnodes, i.e., MPI_Request. """
+    """
+    A type representing an opaque, implementation-specific object.
+
+    Opaque types are useful to represent objects coming from external
+    libraries (for example ``MPI_Request`` or other handles) where DaCe
+    should only carry the type string for code generation and serialization
+    but has no knowledge of the internal layout.
+
+    Serialization: ``opaque.to_json()`` emits a dictionary with the
+    underlying C type string so that external tools or the runtime can
+    reconstruct or reference the handle correctly.
+    """
 
     def __init__(self, typename):
         self.type = typename
@@ -663,10 +754,21 @@ class opaque(typeclass):
 
 
 class pointer(typeclass):
-    """ A data type for a pointer to an existing typeclass.
+    """
+    A pointer type wrapping an existing ``typeclass``.
 
-        Example use:
-            `dace.pointer(dace.struct(x=dace.float32, y=dace.float32))`. """
+    The pointer behaves as a first-class DaCe type that points to an
+    element of ``wrapped_typeclass``. It is used to express C-style
+    pointer parameters in generated code and in callbacks.
+
+    Example::
+        dace.pointer(dace.struct(x=dace.float32, y=dace.float32))
+
+    Important behavior:
+    - ``.base_type`` returns the pointed-to ``typeclass``.
+    - ``.as_ctypes()`` returns a ctypes pointer type suitable for FFI.
+    - ``.to_json()`` and ``from_json()`` support round-trip serialization.
+    """
 
     def __init__(self, wrapped_typeclass):
         self._typeclass = wrapped_typeclass
@@ -709,9 +811,17 @@ class pointer(typeclass):
 
 class vector(typeclass):
     """
-    A data type for a vector-type of an existing typeclass.
+    A SIMD-like vector type that represents a fixed-size sequence of the
+    same scalar element type (for example ``float4``).
 
-    Example use: `dace.vector(dace.float32, 4)` becomes float4.
+    The vector stores its element ``vtype`` and the lane count ``veclen``.
+    Vectors participate in type promotion (``result_type_of``) where
+    vector-vs-scalar mixing favors the vector, and vector-vs-vector rules
+    consider lane counts and element promotions.
+
+    Serialization: the JSON encoding contains the element type and the
+    number of elements. This allows codegen backends to generate
+    appropriate vector constructs for targets that support them.
     """
 
     def __init__(self, dtype: typeclass, vector_length: int):
@@ -767,9 +877,12 @@ class vector(typeclass):
 
 class stringtype(pointer):
     """
-    A specialization of the string data type to improve
-    Python/generated code marshalling.
-    Used internally when `str` types are given
+    Specialization used to represent strings passed between Python and
+    generated C/C++ code. Implemented as a pointer to ``int8`` for
+    easier marshalling to/from char* in generated code.
+
+    The type overrides ``__call__`` so that constructing a value behaves
+    like Python's built-in ``str``.
     """
 
     def __init__(self):
@@ -787,9 +900,21 @@ class stringtype(pointer):
 
 
 class struct(typeclass):
-    """ A data type for a struct of existing typeclasses.
+    """
+    A compound type representing a C-style struct built from named fields.
 
-        Example use: `dace.struct(a=dace.int32, b=dace.float64)`.
+    Each field is associated with a DaCe ``typeclass`` and the struct can
+    be serialized and converted to a ctypes.Structure for FFI.
+
+    Example::
+            dace.struct('Point', x=dace.int32, y=dace.int32)
+
+    Notes:
+    - Length-annotated fields (arrays) are represented as a tuple of
+        ``(pointer_type, length)``; only pointer types are allowed to have
+        an associated length in the current implementation.
+    - ``as_ctypes()`` will build and cache a corresponding ctypes class
+        so the struct can be passed to extension functions.
     """
 
     def __init__(self, name, **fields_and_types):
@@ -891,9 +1016,16 @@ class struct(typeclass):
 
 class pyobject(opaque):
     """
-    A generic data type for Python objects in un-annotated callbacks.
-    It cannot be used inside a DaCe program, but can be passed back to other Python callbacks.
-    Use with caution, and ensure the value is not removed by the garbage collector or the program will crash.
+    Represents a generic Python object handle for use in callbacks and
+    interop where the runtime will pass opaque Python objects between
+    Python and generated code.
+
+    Caveats:
+    - Values of this type are not suitable for use inside strictly compiled
+        DaCe kernels; they can be used only in Python callbacks or where the
+        runtime is responsible for keeping a Python reference alive.
+    - Misuse can easily lead to dangling references if the Python object is
+        garbage-collected while native code still refers to it.
     """
 
     def __init__(self):
@@ -1283,6 +1415,34 @@ _bool = bool
 
 
 def dtype_to_typeclass(dtype=None):
+    """
+    Map NumPy/Python scalar dtypes to DaCe ``typeclass`` instances.
+
+    When called without arguments, returns the full mapping dictionary; when
+    provided with a specific dtype (for example ``numpy.float32`` or
+    the Python ``int`` type), returns the corresponding DaCe ``typeclass``.
+
+    The mapping is used widely throughout the frontend, codegen and
+    serialization code to obtain a canonical DaCe representation for a
+    given dtype (see callers such as ``dace/frontend/python/newast.py``,
+    ``dace/serialize.py`` and many replacement libraries).
+
+    :param dtype: optional Python or NumPy dtype to map.
+    :returns: either the mapping dict (no arg) or the corresponding
+              ``typeclass`` for the provided dtype.
+    """
+
+    # Base mapping of known Python/NumPy types to DaCe typeclasses. This
+    # mapping can be extended at runtime via ``register_typeclass`` or
+    # ``register_builtin_dtype`` below. Callers that need the full mapping
+    # without resolving a specific dtype should call ``dtype_to_typeclass()``
+    # with no arguments.
+    global _RUNTIME_DTYPE_OVERRIDES
+    try:
+        _RUNTIME_DTYPE_OVERRIDES
+    except NameError:
+        _RUNTIME_DTYPE_OVERRIDES = {}
+
     DTYPE_TO_TYPECLASS = {
         _bool: typeclass(_bool),
         int: typeclass(int),
@@ -1309,14 +1469,67 @@ def dtype_to_typeclass(dtype=None):
         numpy.ulonglong: uint64
     }
     if dtype is None:
-        return DTYPE_TO_TYPECLASS
+        # Merge runtime overrides on top of the default mapping. Overrides
+        # allow registering new Python builtins or mapping custom types to
+        # DaCe typeclasses at runtime.
+        merged = DTYPE_TO_TYPECLASS.copy()
+        merged.update(_RUNTIME_DTYPE_OVERRIDES)
+        return merged
+    # Lookups should also consider runtime overrides.
+    if dtype in _RUNTIME_DTYPE_OVERRIDES:
+        return _RUNTIME_DTYPE_OVERRIDES[dtype]
     return DTYPE_TO_TYPECLASS[dtype]
+
+
+def register_typeclass(py_type, dace_typeclass):
+    """
+    Register a mapping from a Python type object to a DaCe ``typeclass``
+    instance at runtime.
+
+    This is useful when adding user-defined scalar-like types or when
+    bridging third-party libraries that expose custom scalar classes.
+
+    :param py_type: a Python ``type`` or dtype object (e.g. ``numpy.dtype`` or
+                    a Python built-in type) to register.
+    :param dace_typeclass: an instance of :class:`typeclass` (or subclass)
+                           that should be used for the given Python type.
+    """
+    global _RUNTIME_DTYPE_OVERRIDES
+    try:
+        _RUNTIME_DTYPE_OVERRIDES
+    except NameError:
+        _RUNTIME_DTYPE_OVERRIDES = {}
+    _RUNTIME_DTYPE_OVERRIDES[py_type] = dace_typeclass
+
+
+def register_builtin_dtype(py_type, typename=None):
+    """
+    Convenience to register a plain Python builtin numeric type as a
+    DaCe ``typeclass`` at runtime. This creates and registers a
+    :class:`typeclass` wrapping ``py_type`` and returns it.
+
+    Example::
+        # Register an existing Python builtin to map to a DaCe typeclass
+        dace.dtypes.register_builtin_dtype(bool, 'bool')
+
+    :param py_type: builtin Python type (e.g. ``int``, ``float``) or
+                    NumPy scalar type to register.
+    :param typename: optional string name for the type (used in
+                     serialization); if omitted the wrapped type's
+                     __name__ is used.
+    :returns: the newly created :class:`typeclass` instance.
+    """
+    tc = typeclass(py_type, typename=typename)
+    register_typeclass(py_type, tc)
+    return tc
 
 
 # Since this overrides the builtin bool, this should be after the
 # DTYPE_TO_TYPECLASS dictionary
 bool = bool_
 
+# Mapping from DaCe typeclasses to C++ type name strings used by codegen.
+# Used by data rendering, serialization, and C++ code generation targets.
 TYPECLASS_TO_STRING = {
     bool: "dace::bool_",
     bool_: "dace::bool_",
@@ -1335,11 +1548,15 @@ TYPECLASS_TO_STRING = {
     complex128: "dace::complex128"
 }
 
+# Accepted textual names for typeclasses (used by serializers and
+# frontend helpers that parse textual dtype annotations).
 TYPECLASS_STRINGS = [
     "int", "float", "complex", "bool", "bool_", "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32",
     "uint64", "float16", "float32", "float64", "complex64", "complex128"
 ]
 
+# Convenience list of integer-like DaCe typeclasses used by transformations
+# and passes that need to test integer-ness.
 INTEGER_TYPES = [bool, bool_, int8, int16, int32, int64, uint8, uint16, uint32, uint64]
 
 #######################################################
