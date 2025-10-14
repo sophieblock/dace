@@ -11,12 +11,16 @@ Library Nodes in DaCe IR (Operator Abstractions)
 In DaCe, a Library Node is an abstract representation of an operation (e.g., matrix multiplication) in the SDFG. Instead of expanding the operation into lower-level dataflow immediately, the Library Node stands in as a single node with well-defined inputs and outputs ￼. This abstraction serves two main purposes:
 • **Deferred Implementation (Expansion)**: The Library Node can later be expanded into a concrete implementation (which could be a native dataflow or a call to an external library) ￼. This allows DaCe to leverage highly-optimized libraries (like BLAS, cuBLAS, MKL, etc.) or fallback to a default implementation if those are unavailable ￼.
 • **Semantic Transformations**: Because the Library Node encodes a high-level operation, DaCe can apply transformations using its semantics. For example, a transformation might fuse a matrix-multiplication node with a subsequent transposition by recognizing that a certain implementation can output transposed data directly ￼. Such optimizations are easier at the abstract level than on low-level code.
+• **Performance Portability**: Same algorithm can target different hardware by switching implementations
 
-In the SDFG visual representation, a Library Node appears as a rectangular node (often labeled by the operation name, e.g., “MatMul”) distinct from low-level computation tasklets. Internally, a Library Node class defines the contract for the operation: the expected inputs and outputs (connectors), as well as any compile-time parameters or properties. Let’s see how DaCe defines a library node in code.
+Library Nodes serve as the semantic contract for an operation, defining:
+1. Input/output connectors
+2. Compile-time properties and parameters 
+3. Available implementations
 
-#### Defining a Library Node Class
+#### How to Define a Library Node
 
-To create a new library node, you define a Python class that inherits from dace.sdfg.nodes.LibraryNode and register it with DaCe’s library system. This is done using the decorator @dace.library.node (or @dace.library.register_node) on the class. For example, the DaCe library defines an Einstein Summation node as follows:
+Library Nodes are created by decorating a class with `@dace.library.node` (establishes the semantic contracts) (or `@dace.library.register_node`) on the class. For example, the DaCe library defines an Einstein Summation node as follows:
 ```python
 from dace import library, nodes
 

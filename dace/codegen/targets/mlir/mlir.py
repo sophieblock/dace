@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from dace.codegen.targets.framecode import DaCeCodeGenerator
 
 
+
+
 @registry.autoregister_params(name='mlir')
 class MLIRCodeGen(TargetCodeGenerator):
     target_name = 'mlir'

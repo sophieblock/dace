@@ -1,0 +1,21 @@
+compiler:
+  cpu:
+    executable: /opt/homebrew/opt/llvm/bin/clang++
+    args: -Xpreprocessor -fopenmp
+    openmp_sections: True # emit OMP parallel sections when applicable
+  linker:
+    args: -lomp
+
+  cuda:
+    default_block_size: 64,8,1  # keep your GPU default (harmless on macOS)
+   
+library:
+  blas:
+    default_implementation: OpenBLAS
+    override: true
+  lapack:
+    default_implementation: OpenBLAS
+  linalg:
+    default_implementation: OpenBLAS
+
+debugprint: true
