@@ -319,7 +319,7 @@ def test_cpu_backed_array_packages():
     print(f"is array: {dtypes.is_array(a)}")
 
     # SciPy sparse (csr_matrix) — should be convertible to numpy or expose __array__
-    scipy = pytest.importorskip('scipy')
+
     from scipy import sparse
     s = sparse.csr_matrix(np.arange(6).reshape(2, 3))
     assert is_array_like(s)
@@ -328,7 +328,7 @@ def test_cpu_backed_array_packages():
     
     # Dask Array
     da = pytest.importorskip('dask.array')
-    import dask.array as da  # noqa: F401  (module alias retained for clarity)
+    
     da_obj = da.from_array(np.arange(6).reshape(2, 3), chunks=(2, 3))
     # Dask arrays may not implement __array_interface__ but are convertible via compute/np.asarray
     assert is_array_like(da_obj)

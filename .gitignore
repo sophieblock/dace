@@ -133,8 +133,8 @@ obj/
 [Rr]elease*/
 _ReSharper*/
 [Tt]est[Rr]esult*
-.vs/
-.vscode/
+# .vs/
+# .vscode/
 src.VC.db
 src.VC.VC.opendb
 *.exp
@@ -148,22 +148,22 @@ out.sdfg
 results.log
 perf.json
 perf*.csv
-/dace/frontend/octave/parsetab.py
+# /dace/frontend/octave/parsetab.py
 
 # Xilinx
 xilinx_vcu1525_*
 sdaccel_profile_*
 sdaccel_timeline_*
-.run/
+# .run/
 
 # NVIDIA
-*.nvprof
-out.sdfg
+# *.nvprof
+# out.sdfg
 
 # Miscellaneous
 *~
 
-perfdata.db
+# perfdata.db
 
 .idea/
 _dotgraphs/
@@ -191,7 +191,7 @@ _build/
 
 
 .*cache/
-/doc/source/config_schema.rst
+# /doc/source/config_schema.rst
 
 # Ignoring the test junk
-_all_tests/
+# _all_tests/
