@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "tuple": "cpp"
+    },
+    "cmake.sourceDirectory": "/Users/sophieblock/dev_packages/dace/dace/codegen",
+    "dace.general.autoOpenInstrumentationReports": "Always",
+
+}
