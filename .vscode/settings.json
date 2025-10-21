@@ -1,8 +1,29 @@
 {
-    "files.associations": {
-        "tuple": "cpp"
-    },
-    "cmake.sourceDirectory": "/Users/sophieblock/dev_packages/dace/dace/codegen",
-    "dace.general.autoOpenInstrumentationReports": "Always",
-
+    "dace.general.autoOpenSdfgs": "Always",
+    "githubPullRequests.remotes": [
+        "origin"
+    ],
+    "npm-intellisense.showBuildInLibs": true,
+    "terminal.integrated.windowsEnableConpty": false,
+    "debug.toolBarLocation": "floating",
+    "github.copilot.nextEditSuggestions.enabled": true,
+    "gitTreeCompare.autoChangeRepository": true,
+    "github.copilot.chat.agent.thinkingTool": true,
+    "github.copilot.chat.alternateGptPrompt.enabled": true,
+    "github.copilot.chat.notebook.enhancedNextEditSuggestions.enabled": true,
+    "python.createEnvironment.contentButton": "show",
+    "python.languageServer": "Default",
+    "diffEditor.codeLens": true,
+    "workbench.editor.alwaysShowEditorActions": true,
+    "workbench.settings.editor": "json",
+    "workbench.settings.useSplitJSON": true,
+    "debug.console.acceptSuggestionOnEnter": "on",
+    "debug.onTaskErrors": "showErrors",
+    "debug.showVariableTypes": true,
+    "terminal.explorerKind": "both",
+    "extensions.supportNodeGlobalNavigator": true,
+    "chat.checkpoints.showFileChanges": true,
+    "telemetry.editStats.enabled": false,
+    "chat.agentSessionsViewLocation": "view",
+    "chat.mcp.assisted.nuget.enabled": true
 }

@@ -13,13 +13,13 @@ import subprocess
 import numpy as np
 import numpy
 
+
 def show_interfaces(x):
     print(f"\nPackage: {type(x).__module__}.{type(x).__name__}")
     print(f"dace is_array: {dace.dtypes.is_array(x)}")
     print("has __array_interface__:", hasattr(x, "__array_interface__"))
     print("has __cuda_array_interface__:", hasattr(x, "__cuda_array_interface__"))
     print("has __dlpack__:", hasattr(x, "__dlpack__") or hasattr(x, "__torch_dlpack__"))
-    
 
 
 def is_array_like(obj):
@@ -53,30 +53,52 @@ def is_gpu_array_like(obj):
         return True
     return False
 
+
 def is_torch_tensor(obj):
     if type(obj).__module__ == "torch" and type(obj).__name__ == "Tensor":
         return True
     return False
+
+
 candidate_names = [
-        "bool_",
-        # bit-sized integers
-        "int8", "int16", "int32", "int64",
-        "uint8", "uint16", "uint32", "uint64",
-        
-        # floating point
-        "float16", "float32", "float64", "longdouble",
-        # complex floating-point
-        "complex64", "complex128","clongdouble",
-        
-        # c-named integers 
-        "byte", "ubyte", "short","ushort",
-        "intc","uintc",
-        "longlong","ulonglong", 
-        
-        "str", "bytes", "T", "object", "V",
-        
-    ]
-numpy_types = [numpy.bool_,
+    "bool_",
+    # bit-sized integers
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+
+    # floating point
+    "float16",
+    "float32",
+    "float64",
+    "longdouble",
+    # complex floating-point
+    "complex64",
+    "complex128",
+    "clongdouble",
+
+    # c-named integers
+    "byte",
+    "ubyte",
+    "short",
+    "ushort",
+    "intc",
+    "uintc",
+    "longlong",
+    "ulonglong",
+    "str",
+    "bytes",
+    "T",
+    "object",
+    "V",
+]
+numpy_types = [
+    numpy.bool_,
     numpy.intc,
     numpy.intp,
     numpy.int8,
@@ -92,29 +114,28 @@ numpy_types = [numpy.bool_,
     numpy.float64,
     numpy.complex64,
     numpy.complex128,
-    ]
+]
 
 ctype_numpy = [
     np.longlong,
-    
-    
 ]
+
+
 def test_typeclass_by_str():
     for np_type in numpy_types:
         type_class = dace.typeclass(np_type)
         print(f"{np_type} -> {type_class}, type: {type(type_class)}")
+
+
 def test_numpy_scalar_types():
     # Test that numpy scalar types behave as expected
     import math
     # A conservative list of numpy scalar types to exercise. This covers the
     # canonical DType classes the project commonly needs to support.
     np_scalar_types = [
-        np.bool_,
-        np.int8, np.uint8, np.int16, np.uint16, np.int32, np.uint32, np.int64, np.uint64,
-        np.intc, np.uintc, np.longlong, np.ulonglong,
-        np.float16, np.float32, np.float64, np.longdouble,
-        np.complex64, np.complex128, getattr(np, 'clongdouble', np.complex128),
-        np.str_, np.bytes_, np.unicode_, object, np.void
+        np.bool_, np.int8, np.uint8, np.int16, np.uint16, np.int32, np.uint32, np.int64, np.uint64, np.intc, np.uintc,
+        np.longlong, np.ulonglong, np.float16, np.float32, np.float64, np.longdouble, np.complex64, np.complex128,
+        getattr(np, 'clongdouble', np.complex128), np.str_, np.bytes_, np.unicode_, object, np.void
     ]
 
     for np_t in np_scalar_types:
@@ -129,7 +150,7 @@ def test_numpy_scalar_types():
             # Create a 1-byte void value
             val = np.array([b'\x00'], dtype='V1')[0]
         elif issubclass(np_t, np.complexfloating) if isinstance(np_t, type) else False:
-            val = np.array(1+2j, dtype=np_t)[0]
+            val = np.array(1 + 2j, dtype=np_t)[0]
         elif issubclass(np_t, np.floating) if isinstance(np_t, type) else False:
             val = np.array(1.0, dtype=np_t)[0]
         else:
@@ -168,7 +189,7 @@ def test_numpy_scalar_types():
         else:
             # Unknown expected mapping; at minimum ensure DaCe produced a typeclass
             assert isinstance(desc.dtype, dace.dtypes.typeclass)
-    
+
 
 def test_tensor_init_with_numpy_dtype():
     arr = [1, 2, 3]
@@ -181,7 +202,6 @@ def test_tensor_init_with_numpy_dtype():
 
 
 def test_numpy_is_array_and_canonicalize():
-    
 
     a = np.arange(12, dtype=np.int32).reshape(3, 4)
     show_interfaces(a)
@@ -197,26 +217,25 @@ def test_numpy_is_array_and_canonicalize():
 
 def test_torch_is_array_and_canonicalize():
     t = torch.zeros((2, 3), dtype=torch.float32)
-    
+
     np_arr = np.asarray(t)
-    
+
     # torch tensors should be detected as arrays
     assert dace.dtypes.is_array(t) is True
-  
-    
+
     # assert (hasattr(t, '__array_interface__') or hasattr(t, '__cuda_array_interface__'))
     show_interfaces(t)
     print(f"-> is_tensor: {is_torch_tensor(t)}")
     desc = dace.data.create_datadescriptor(t)
     assert isinstance(desc, dace.data.Array)
     assert tuple(desc.shape) == tuple(t.shape)
-    
+
     # Torch float32 should map to numpy.float32 in the descriptor
     assert desc.dtype.type == np.float32
     show_interfaces(np_arr)
     print(f"-> is_tensor: {is_torch_tensor(np_arr)}")
     print(f"-> is cpu-backed: {is_array_like(np_arr)}")
-    
+
 
 def test_numba_external_type_handling():
     # If numba is available, ensure its typed.List is not treated as an array
@@ -227,7 +246,7 @@ def test_numba_external_type_handling():
     nl = NumbaList([1, 2, 3])
     # This should not be considered an array by the array-detection helper
     assert dace.dtypes.is_array(nl) is False
-    
+
     show_interfaces(nl)
     # Creating a data descriptor from this object should raise (no automatic conversion)
     with pytest.raises(TypeError):
@@ -247,7 +266,6 @@ def test_builtin_list_and_scalar_canonicalize():
     assert desc.dtype.type == inferred
     print(f"new type: {type(desc)}, size: {desc.total_size}, shape: {desc.shape}")
 
-
     # Built-in scalar converts to a Scalar descriptor
     scalar = 7
     assert dace.dtypes.is_array(scalar) is False
@@ -255,7 +273,7 @@ def test_builtin_list_and_scalar_canonicalize():
     # Scalars are represented as Scalar/Data descriptors
     assert isinstance(sdesc, dace.data.Scalar) or isinstance(sdesc, dace.data.Data)
     show_interfaces(scalar)
-    
+
     nested_list = [[1, 2], [3, 4]]
     assert dace.dtypes.is_array(nested_list) is False
     ndesc = dace.data.create_datadescriptor(nested_list)
@@ -263,19 +281,17 @@ def test_builtin_list_and_scalar_canonicalize():
     show_interfaces(nested_list)
     print(f"new type: {type(ndesc)}, size: {ndesc.total_size}, shape: {ndesc.shape}")
 
+
 def test_dace_dtype_resource_values_against_torch_type(print_diagnostics=True):
     # Compact check: compare DaCe typeclasses with torch dtypes via element size
-    cases = [
-        ("int8", torch.int8), ("float32", torch.float32), ("int32", torch.int32),
-        ("uint8", torch.uint8), ("float64", torch.float64), ("int64", torch.int64),
-        ("bool", torch.bool)
-    ]
+    cases = [("int8", torch.int8), ("float32", torch.float32), ("int32", torch.int32), ("uint8", torch.uint8),
+             ("float64", torch.float64), ("int64", torch.int64), ("bool", torch.bool)]
 
     shape = (2, 2, 2)
     for name, torch_dtype in cases:
         dt = getattr(dace, name, None) or getattr(dace.dtypes, name, None)
         if dt is None:
-            raise  ValueError(f"DaCe type '{name}' not available")
+            raise ValueError(f"DaCe type '{name}' not available")
 
         # Determine element size from DaCe typeclass without using as_numpy_dtype
         nptype = getattr(dt, 'type', dt)
@@ -293,7 +309,9 @@ def test_dace_dtype_resource_values_against_torch_type(print_diagnostics=True):
         bits_per_elem = elem_size * 8
         total_bits = nbytes * 8
         if print_diagnostics:
-            print(f"DT={dt}, shape={shape}, elem_size={elem_size}, ne={ne}, elem_dtype={nptype}, nbytes={nbytes}, bits_per_elem={bits_per_elem}, total_bits={total_bits}")
+            print(
+                f"DT={dt}, shape={shape}, elem_size={elem_size}, ne={ne}, elem_dtype={nptype}, nbytes={nbytes}, bits_per_elem={bits_per_elem}, total_bits={total_bits}"
+            )
 
         assert torch_elem_size == elem_size, f"Mismatch for {name}: torch {torch_elem_size} != dace {elem_size}"
 
@@ -325,10 +343,10 @@ def test_cpu_backed_array_packages():
     assert is_array_like(s)
     show_interfaces(s)
     print(f"is array: {dtypes.is_array(s)}")
-    
+
     # Dask Array
     da = pytest.importorskip('dask.array')
-    
+
     da_obj = da.from_array(np.arange(6).reshape(2, 3), chunks=(2, 3))
     # Dask arrays may not implement __array_interface__ but are convertible via compute/np.asarray
     assert is_array_like(da_obj)
@@ -341,13 +359,13 @@ def test_cpu_backed_array_packages():
     assert is_array_like(ak_arr)
     show_interfaces(ak_arr)
     print(f"is array: {dtypes.is_array(ak_arr)}")
-    
+
     # PyData-Sparse
     ps = pytest.importorskip('sparse')
     import sparse as ps  # noqa: F401
     sp_arr = ps.COO(np.arange(6).reshape(2, 3))
     assert is_array_like(sp_arr)
-    show_interfaces(sp_arr) 
+    show_interfaces(sp_arr)
     print(f"is array: {dtypes.is_array(sp_arr)}")
 
 
@@ -385,7 +403,7 @@ def test_gpu_jax_array():
 
 
 @pytest.mark.skipif(
-    not importlib.util.find_spec('tensorflow') or os.environ.get('DACE_ENABLE_REAL_TF','0') != '1',
+    not importlib.util.find_spec('tensorflow') or os.environ.get('DACE_ENABLE_REAL_TF', '0') != '1',
     reason='Real TensorFlow test disabled (set DACE_ENABLE_REAL_TF=1 to enable) or tensorflow not installed')
 def test_gpu_tensorflow_tensor():
     """TensorFlow tensor detection isolated & made safer.
@@ -397,9 +415,9 @@ def test_gpu_tensorflow_tensor():
     """
     import os, time
     # Must be set before importing tensorflow
-    os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '2')            # silence INFO/WARN
-    os.environ.setdefault('TF_FORCE_GPU_ALLOW_GROWTH', 'true')    # avoid grabbing full GPU memory
-    os.environ.setdefault('TF_ENABLE_ONEDNN_OPTS', '0')           # speed up init in some envs
+    os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '2')  # silence INFO/WARN
+    os.environ.setdefault('TF_FORCE_GPU_ALLOW_GROWTH', 'true')  # avoid grabbing full GPU memory
+    os.environ.setdefault('TF_ENABLE_ONEDNN_OPTS', '0')  # speed up init in some envs
     os.environ.setdefault('XLA_PYTHON_CLIENT_PREALLOCATE', 'false')
 
     # Import tensorflow lazily now (kept above for skipif detection only)
@@ -429,11 +447,14 @@ def test_gpu_tensorflow_tensor():
     show_interfaces(tft)
     print(f"is array: {dtypes.is_array(tft)}")
 
+
 #############################################
 # Mock-based tests (no heavy imports required)
 #############################################
 
+
 class _MockCPUArray:
+
     def __init__(self, shape=(2, 3), dtype=np.float32):
         self._backing = np.zeros(shape, dtype=dtype)
         self.shape = shape
@@ -448,7 +469,8 @@ class _MockCPUArray:
 
 
 class _MockGPUArray:
-    def __init__(self, shape=(4,), dtype=np.float32):
+
+    def __init__(self, shape=(4, ), dtype=np.float32):
         self._backing = np.zeros(shape, dtype=dtype)  # still CPU memory, we just simulate interface
         self.shape = shape
         self.dtype = self._backing.dtype
@@ -462,10 +484,12 @@ class _MockGPUArray:
 
 
 class _MockDLPackArray:
-    def __init__(self, shape=(3,), dtype=np.int32):
+
+    def __init__(self, shape=(3, ), dtype=np.int32):
         self._backing = np.zeros(shape, dtype=dtype)
         self.shape = shape
         self.dtype = self._backing.dtype
+
     def __dlpack__(self):  # minimal placeholder
         raise RuntimeError("DLPack export not implemented in mock (intentionally)")
 
@@ -512,8 +536,10 @@ def test_tensorflow_descriptor_wrapper():
     t = tf.constant([[1.0, 2.0, 3.0], [4.5, 5.5, 6.5]], dtype=tf.float32)
 
     class _TFWrapper:
+
         def __init__(self, tensor):
             self.tensor = tensor
+
         def __descriptor__(self):  # Adapter contract recognized by create_datadescriptor
             arr = self.tensor.numpy()  # Explicit host copy; safe and deterministic
             return dace.data.create_datadescriptor(arr)
@@ -571,24 +597,30 @@ print('DTYPE=', desc.dtype)
     assert 'int32' in dtype_line[0].lower()
 
 
-@pytest.mark.skipif(
-    not importlib.util.find_spec('tensorflow') or os.environ.get('DACE_ENABLE_INPROCESS_TF','0') != '1',
-    reason='In-process TF conversion disabled (set DACE_ENABLE_INPROCESS_TF=1) or TF not installed')
+@pytest.mark.skipif(not importlib.util.find_spec('tensorflow')
+                    or os.environ.get('DACE_ENABLE_INPROCESS_TF', '0') != '1',
+                    reason='In-process TF conversion disabled (set DACE_ENABLE_INPROCESS_TF=1) or TF not installed')
 def test_tensorflow_wrapper_inprocess():
     """Optional in-process TF -> DaCe conversion using wrapper. Requires explicit opt-in.
 
     This is intentionally separate; if it causes instability set DACE_ENABLE_INPROCESS_TF=0.
     """
     import tensorflow as tf
-    t = tf.constant([[10., 11.],[12.,13.]], dtype=tf.float32)
+    t = tf.constant([[10., 11.], [12., 13.]], dtype=tf.float32)
+
     class _Wrap:
-        def __init__(self, tens): self._t = tens
+
+        def __init__(self, tens):
+            self._t = tens
+
         def __descriptor__(self):
             arr = self._t.numpy()
             return dace.data.create_datadescriptor(arr)
+
     d = dace.data.create_datadescriptor(_Wrap(t))
-    assert tuple(d.shape) == (2,2)
+    assert tuple(d.shape) == (2, 2)
     assert d.dtype.type == np.float32
+
 
 if __name__ == "__main__":
     test_typeclass_by_str()
@@ -596,7 +628,7 @@ if __name__ == "__main__":
     # test_scalar_types()
     # test_torch_is_array_and_canonicalize()
     # test_dace_dtype_resource_values_against_torch_type()
-    
+
     # test_sctype_from_string_and_sctype_from_torch_dtype()
     # test_DType_and_dtype_wrapper()
     # test_tensor_init_with_numpy_dtype()
@@ -606,11 +638,11 @@ if __name__ == "__main__":
     # Individual GPU/accelerator tests (guarded by availability)
     # test_gpu_pytorch_tensor()
     # test_numba_external_type_handling()
-    # test_gpu_jax_array()    
+    # test_gpu_jax_array()
     # if importlib.util.find_spec('jax'):
     #     print(f"Testing jax.Array detection...")
     #     test_gpu_jax_array()
-  
+
     # if os.environ.get('DACE_ENABLE_REAL_TF','0') == '1' and importlib.util.find_spec('tensorflow'):
     #     print(f"Testing tensorflow.Tensor detection (real TF enabled)...")
     #     test_gpu_tensorflow_tensor()
