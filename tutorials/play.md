@@ -15,7 +15,7 @@ In DaCe, a Library Node is an abstract representation of an operation (e.g., mat
 
 Library Nodes serve as the semantic contract for an operation, defining:
 1. Input/output connectors
-2. Compile-time properties and parameters 
+2. Compile-time properties and parameters
 3. Available implementations
 
 #### How to Define a Library Node
