@@ -4,26 +4,26 @@ __pycache__/
 *$py.class
 
 # C extensions
-# *.so
+*.so
 
 # Distribution / packaging
-# .Python
-# build/
-# develop-eggs/
-# dist/
-# downloads/
-# eggs/
-# .eggs/
-# lib/
-# lib64/
-# parts/
-# sdist/
-# var/
-# wheels/
-# *.egg-info/
-# .installed.cfg
-# *.egg
-# MANIFEST
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -48,17 +48,17 @@ coverage.xml
 .pytest_cache/
 
 # Translations
-# *.mo
+*.mo
 *.pot
 
 # Django stuff:
 *.log
-# local_settings.py
+local_settings.py
 db.sqlite3
 
 # Flask stuff:
-# instance/
-# .webassets-cache
+instance/
+.webassets-cache
 
 # Scrapy stuff:
 .scrapy
@@ -68,7 +68,7 @@ docs/_build/
 doc/_build/
 
 # PyBuilder
-# target/
+target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -155,44 +155,48 @@ perf*.csv
 xilinx_vcu1525_*
 sdaccel_profile_*
 sdaccel_timeline_*
-# .run/
+.run/
 
 # NVIDIA
-# *.nvprof
-# out.sdfg
+*.nvprof
+out.sdfg
 
 # Miscellaneous
-# *~
+*~
 
-# perfdata.db
+perfdata.db
 
-# .idea/
-# _dotgraphs/
-# _dacegraphs/
+.idea/
+_dotgraphs/
+_dacegraphs/
 
-# /dace/codegen/cmake-build-debug/
+/dace/codegen/cmake-build-debug/
 
-# client_configs/
+client_configs/
 
-# perfdata-dir/
+perfdata-dir/
 
-# rgf_dense_saved.sdfg
+rgf_dense_saved.sdfg
 
-# .ycm_extra_conf.py
+.ycm_extra_conf.py
 
-# /dace/viewer/sdfv_tmp*.html
+/dace/viewer/sdfv_tmp*.html
 
-# _build/
+_build/
 
-# /*.sdfg
+/*.sdfg
 
 
 .DS_STORE
 .DS_Store
 
 
-# .*cache/
+.*cache/
 # /doc/source/config_schema.rst
 
 # Ignoring the test junk
-# _all_tests/
+_all_tests/
+dace/viewer/webclient
+
+# Ignore nested vision repo
+vision/
